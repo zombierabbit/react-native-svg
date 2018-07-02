@@ -17,13 +17,14 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PathMeasure;
 import android.graphics.Rect;
-import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.os.Build;
 
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.uimanager.ReactShadowNode;
 import com.facebook.react.uimanager.annotations.ReactProp;
+
+import java.text.Bidi;
 
 import javax.annotation.Nullable;
 
@@ -68,6 +69,66 @@ class TSpanShadowNode extends TextShadowNode {
         mCache = null;
     }
 
+
+    /**
+     * Implements visual to logical order converter.
+     *
+     * @author <a href="http://www.nesterovsky-bros.com">Nesterovsky bros</a>
+     *
+     * @param text an input text in visual order to convert.
+     * @return a String value in logical order.
+     */
+    public static String visualToLogical(String text)
+    {
+        if ((text == null) || (text.length() == 0))
+        {
+            return text;
+        }
+
+        Bidi bidi = new Bidi(text, Bidi.DIRECTION_DEFAULT_LEFT_TO_RIGHT);
+
+        if (bidi.isLeftToRight())
+        {
+            return text;
+        }
+
+        int count = bidi.getRunCount();
+        byte[] levels = new byte[count];
+        Integer[] runs = new Integer[count];
+
+        for (int i = 0; i < count; i++)
+        {
+            levels[i] = (byte)bidi.getRunLevel(i);
+            runs[i] = i;
+        }
+
+        Bidi.reorderVisually(levels, 0, runs, 0, count);
+
+        StringBuilder result = new StringBuilder();
+
+        for (int i = 0; i < count; i++)
+        {
+            int index = runs[i];
+            int start = bidi.getRunStart(index);
+            int end = bidi.getRunLimit(index);
+            int level = levels[index];
+
+            if ((level & 1) != 0)
+            {
+                for (; --end >= start;)
+                {
+                    result.append(text.charAt(end));
+                }
+            }
+            else
+            {
+                result.append(text, start, end);
+            }
+        }
+
+        return result.toString();
+    }
+
     @Override
     protected Path getPath(Canvas canvas, Paint paint) {
         if (mCache != null) {
@@ -81,7 +142,9 @@ class TSpanShadowNode extends TextShadowNode {
         setupTextPath();
 
         pushGlyphContext();
-        mCache = getLinePath(mContent, paint, canvas);
+
+        mCache = getLinePath(visualToLogical(mContent), paint, canvas);
+
         popGlyphContext();
 
         return mCache;
@@ -249,7 +312,8 @@ class TSpanShadowNode extends TextShadowNode {
         */
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             String required = "'rlig', 'liga', 'clig', 'calt', 'locl', 'ccmp', 'mark', 'mkmk',";
-            String defaultFeatures = required + "'kern', ";
+            String arabic = "'isol', 'fina', 'medi', 'init', 'rclt', 'mset', 'curs', ";
+            String defaultFeatures = required + arabic + "'kern', ";
             if (allowOptionalLigatures) {
                 String additionalLigatures = "'hlig', 'cala', ";
                 paint.setFontFeatureSettings(defaultFeatures + additionalLigatures + font.fontFeatureSettings);
